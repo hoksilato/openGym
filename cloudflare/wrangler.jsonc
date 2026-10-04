@@ -1,0 +1,53 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "opengym",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "../frontend/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "none",
+    "run_worker_first": [
+      "/api",
+      "/api/*"
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "opengym",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "APP",
+        "class_name": "OpenGym"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "OpenGym"
+      ]
+    }
+  ],
+  "vars": {
+    "ORIGIN": "https://opengym.YOUR-SUBDOMAIN.workers.dev",
+    "RP_ID": "opengym.YOUR-SUBDOMAIN.workers.dev",
+    "RP_NAME": "openGym",
+    "INVITE_ONLY": "1",
+    "ALLOW_GUEST": "0",
+    "PASSWORD_LOGIN": "0",
+    "SESSION_DAYS": "90"
+  }
+}

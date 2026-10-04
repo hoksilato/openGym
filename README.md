@@ -336,3 +336,7 @@ version's source under the same license.
 > media, clear it with the rights holder first.
 
 Full third-party notices, including the body-diagram geometry, are in [NOTICE.md](NOTICE.md).
+
+## Optional Cloudflare Free adapter (draft)
+
+For an invite-only 2–3-user iPhone PWA, see [Cloudflare adapter](cloudflare/README.md) and the [Vietnamese setup guide](docs/CLOUDFLARE_FREE.vi.md). Local runtime-tested; hosted Free quotas and real iPhone behavior still require acceptance testing. The Node/Docker deployment above is unchanged.

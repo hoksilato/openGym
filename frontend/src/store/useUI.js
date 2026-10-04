@@ -334,6 +334,19 @@ export const useUI = create((set, get) => ({
   }
 }))
 
+// Sheets and timed-set callbacks belong to the current account too. A suspended timer must not
+// finish a set in the next person's workout after logout or a sign-in in another tab. Do not
+// call stopRest here: the cookie already belongs to the next account, so cancelling its server
+// timer would affect the wrong person. Only the device's own timers and UI are cleared.
+useStore.subscribe?.((state, previous) => {
+  if (state.user?.id === previous.user?.id) return
+  stopRestTicking()
+  disarmRestAlert()
+  clearTimeout(toastTm)
+  useUI.getState().stopWork()
+  useUI.setState({ timer: null, sheets: [], toastMsg: '' })
+})
+
 // Buttons on the rest notification (pause, ±15s, skip) change the countdown in the
 // service first, then mirror that into the in-app timer. skip ends it. Seconds round up, as the
 // notification's clock does, so a pause in the last half second still holds a second here.

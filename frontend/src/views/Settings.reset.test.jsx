@@ -80,6 +80,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount())
   host.remove()
+  vi.unstubAllEnvs()
 })
 
 const mount = () => act(() => root.render(<Settings />))
@@ -154,6 +155,13 @@ describe('Settings — reset everything', () => {
 })
 
 describe('Settings — footer', () => {
+  it('links a modified build to its configured source offer', () => {
+    vi.stubEnv('VITE_SOURCE_URL', 'https://example.com/operator/opengym')
+    mount()
+    const link = [...host.querySelectorAll('a')].find(a => a.textContent === 'source code')
+    expect(link.getAttribute('href')).toBe('https://example.com/operator/opengym')
+  })
+
   it('links the source code to its home on GitHub', () => {
     mount()
     const link = [...host.querySelectorAll('a')].find(a => a.textContent === 'source code')

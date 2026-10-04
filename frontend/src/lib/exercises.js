@@ -132,8 +132,10 @@ export function matchesExerciseSearch(exercise, query) {
 const ENV = import.meta.env || {}
 const IMG_BASE = ENV.VITE_IMG_BASE || 'img/'
 const GIF_BASE = ENV.VITE_GIF_BASE || 'gif/'
-export const imgSrc = ex => IMG_BASE + ex.img
-export const gifSrc = ex => GIF_BASE + ex.gif
+// Asset-free deployments do not fetch the third-party dataset at all. The catalogue and
+// written instructions still work; a later build can opt into verified, operator-hosted media.
+export const imgSrc = ex => ENV.VITE_EXERCISE_MEDIA !== 'false' && ex?.img ? IMG_BASE + ex.img : null
+export const gifSrc = ex => ENV.VITE_EXERCISE_MEDIA !== 'false' && ex?.gif ? GIF_BASE + ex.gif : null
 
 // Cardio exercises log time + speed instead of weight × reps.
 export const isCardio = idOrEx => (typeof idOrEx === 'string' ? EXIDX[idOrEx] : idOrEx)?.bp === 'cardio'

@@ -17,6 +17,7 @@ const ids = xs => (xs || []).map(x => x.id)
 const workout = (id, d = '2026-09-20') => ({ id, d, start: 1, end: 2, entries: [] })
 const puts = () => api.mock.calls.filter(([, o]) => o?.method === 'PUT').map(([, o]) => JSON.parse(o.body))
 const signedIn = (S, rev) => {
+  localStorage.setItem('gym_owner', 'u1')
   localStorage.setItem('gym_sync', JSON.stringify({ rev, ts: S._ts }))
   useStore.setState({ S, user: { id: 'u1' }, ready: true, sync: { offline: false, pending: false, lastSynced: 0 } })
 }

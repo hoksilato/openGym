@@ -18,6 +18,7 @@ const httpError = status => Object.assign(new Error('HTTP ' + status), { status 
 
 beforeEach(() => {
   localStorage.clear()
+  localStorage.setItem('gym_owner', 'user-1')
   api.mockReset()
   useStore.setState({ S: clone(DEF), user: null, ready: false })
 })

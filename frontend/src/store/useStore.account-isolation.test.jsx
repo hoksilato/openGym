@@ -56,8 +56,65 @@ describe('data sync belongs to the account that started it', () => {
     expect(api).not.toHaveBeenCalled()
   })
 
+  it('does not republish A’s copy as ownerless data after another tab signs out', async () => {
+    const empty = JSON.stringify(clone(DEF))
+    localStorage.setItem('gym_state_v1', empty)
+    for (const key of ['gym_owner', 'gym_user', 'gym_sync', 'gym_dirty']) localStorage.removeItem(key)
+
+    // The owner event has not arrived yet: an old page can still finish an edit or flush.
+    useStore.getState().update(s => { s.restSec = 30 })
+    await useStore.getState().pushState()
+    expect(api).not.toHaveBeenCalled()
+    expect(localStorage.getItem('gym_state_v1')).toBe(empty)
+    expect(localStorage.getItem('gym_owner')).toBeNull()
+    expect(localStorage.getItem('gym_sync')).toBeNull()
+    expect(localStorage.getItem('gym_dirty')).toBeNull()
+
+    window.dispatchEvent(new StorageEvent('storage', { key: 'gym_owner', newValue: null }))
+    expect(ids()).toEqual([])
+    expect(localStorage.getItem('gym_state_v1')).toBe(empty)
+    const kept = Object.values(JSON.parse(localStorage.getItem('gym_stash')))
+    expect(kept[0].uid).toBe(A.id)
+    expect(kept[0].state.workouts.map(w => w.id)).toEqual(['a-local'])
+
+    // A fresh page must not load A's private entries as guest data to import into B.
+    vi.resetModules()
+    const { useStore: fresh } = await import('./useStore.js')
+    const { api: freshApi } = await import('../lib/api.js')
+    freshApi.mockResolvedValue({ uid: B.id, ok: true, rev: 1 })
+    fresh.setState({ ready: true })
+    try {
+      expect(fresh.getState().S.workouts).toEqual([])
+      fresh.getState().setUser(B)
+      await fresh.getState().pushState()
+      const put = freshApi.mock.calls.find(([, opts]) => opts?.method === 'PUT')
+      expect(JSON.parse(put[1].body)).toMatchObject({ uid: B.id, state: { workouts: [] } })
+    } finally { fresh.getState().setUser(null) }
+  })
+
+  for (const method of ['pullState', 'pushState']) {
+    it(`ignores a pending ${method} response after another tab removes the owner`, async () => {
+      const request = deferred()
+      api.mockReturnValueOnce(request.promise)
+      const operation = useStore.getState()[method]()
+      const empty = JSON.stringify(clone(DEF))
+      localStorage.setItem('gym_state_v1', empty)
+      for (const key of ['gym_owner', 'gym_user', 'gym_sync', 'gym_dirty']) localStorage.removeItem(key)
+      request.resolve({ uid: A.id, state: state('a-server'), ok: true, rev: 9 })
+      await operation
+
+      expect(localStorage.getItem('gym_state_v1')).toBe(empty)
+      expect(localStorage.getItem('gym_owner')).toBeNull()
+      expect(localStorage.getItem('gym_sync')).toBeNull()
+      expect(localStorage.getItem('gym_dirty')).toBeNull()
+      expect(localStorage.getItem('gym_synced_at')).toBeNull()
+      expect(api).toHaveBeenCalledTimes(1)
+    })
+  }
+
   it('does not relabel A’s in-memory copy as B when another tab already changed the shared owner', () => {
     useStore.getState().update(s => { s.restSec = 30 })
+    localStorage.setItem('gym_state_v1', JSON.stringify(clone(DEF)))
     localStorage.setItem('gym_owner', B.id)
     useStore.getState().setUser(B)
     expect(ids()).toEqual([])
@@ -65,6 +122,65 @@ describe('data sync belongs to the account that started it', () => {
     expect(kept).toHaveLength(1)
     expect(kept[0].uid).toBe(A.id)
     expect(kept[0].state.workouts.map(w => w.id)).toEqual(['a-local'])
+  })
+
+  it('takes B’s already-saved dirty copy and markers without erasing them, while stashing only A', async () => {
+    useStore.getState().update(s => { s.restSec = 30 })
+    const shared = JSON.stringify({ ...state('b-unsynced'), _ts: 300 })
+    const marker = JSON.stringify({ rev: 8, ts: 100 })
+    localStorage.setItem('gym_state_v1', shared)
+    localStorage.setItem('gym_sync', marker)
+    localStorage.setItem('gym_dirty', '1')
+    localStorage.setItem('gym_synced_at', '123')
+    localStorage.setItem('gym_owner', B.id)
+
+    useStore.getState().setUser(B)
+
+    expect(ids()).toEqual(['b-unsynced'])
+    expect(localStorage.getItem('gym_state_v1')).toBe(shared)
+    expect(localStorage.getItem('gym_sync')).toBe(marker)
+    expect(localStorage.getItem('gym_dirty')).toBe('1')
+    expect(localStorage.getItem('gym_synced_at')).toBe('123')
+    const kept = Object.values(JSON.parse(localStorage.getItem('gym_stash')))
+    expect(kept).toHaveLength(1)
+    expect(kept[0].uid).toBe(A.id)
+    expect(kept[0].state.workouts.map(w => w.id)).toEqual(['a-local'])
+
+    api.mockResolvedValueOnce({ uid: B.id, state: state('b-server'), rev: 9 })
+      .mockResolvedValueOnce({ uid: B.id, ok: true, rev: 10 })
+    await useStore.getState().pullState()
+    expect(ids().sort()).toEqual(['b-server', 'b-unsynced'])
+    expect(puts()).toHaveLength(1)
+    expect(puts()[0].uid).toBe(B.id)
+    expect(puts()[0].baseRev).toBe(9)
+    expect(puts()[0].state.workouts.map(w => w.id).sort()).toEqual(['b-server', 'b-unsynced'])
+  })
+
+  it('keeps B’s unsynced copy when signing in after the owner event already emptied this tab', async () => {
+    const shared = JSON.stringify({ ...state('b-unsynced'), _ts: 300 })
+    const marker = JSON.stringify({ rev: 8, ts: 100 })
+    localStorage.setItem('gym_state_v1', shared)
+    localStorage.setItem('gym_sync', marker)
+    localStorage.setItem('gym_dirty', '1')
+    localStorage.setItem('gym_owner', B.id)
+    window.dispatchEvent(new StorageEvent('storage', { key: 'gym_owner', newValue: B.id }))
+    expect(useStore.getState().user).toBeNull()
+    expect(ids()).toEqual([])
+
+    useStore.getState().setUser(B, { adopt: true })
+    expect(ids()).toEqual(['b-unsynced'])
+    expect(localStorage.getItem('gym_state_v1')).toBe(shared)
+    expect(localStorage.getItem('gym_sync')).toBe(marker)
+    expect(localStorage.getItem('gym_dirty')).toBe('1')
+    expect(JSON.parse(localStorage.getItem('gym_adopt')).rejoined).toBe(true)
+
+    const ask = vi.fn(async () => false)
+    api.mockResolvedValueOnce({ uid: B.id, state: state('b-server'), rev: 9 })
+      .mockResolvedValueOnce({ uid: B.id, ok: true, rev: 10 })
+    await useStore.getState().adoptProfile(ask)
+    expect(ask).not.toHaveBeenCalled()
+    expect(ids().sort()).toEqual(['b-server', 'b-unsynced'])
+    expect(puts()[0].state.workouts.map(w => w.id).sort()).toEqual(['b-server', 'b-unsynced'])
   })
 
   it('keeps a stale tab’s last edit out of B’s shared saved copy, then stashes it only for A', () => {
@@ -87,6 +203,7 @@ describe('data sync belongs to the account that started it', () => {
   it('remembers the in-memory copy’s owner after expiration while another tab signs in as B', () => {
     useStore.getState().update(s => { s.restSec = 30 })
     useStore.getState().setUser(null)
+    localStorage.setItem('gym_state_v1', JSON.stringify(clone(DEF)))
     localStorage.setItem('gym_owner', B.id)
     useStore.getState().setUser(B)
     expect(ids()).toEqual([])
@@ -193,4 +310,65 @@ describe('data sync belongs to the account that started it', () => {
     expect(localStorage.getItem('gym_synced_at')).toBeNull()
     expect(puts()).toEqual([])
   })
+
+  for (const method of ['signOut', 'signOutAll']) {
+    it(`${method} still clears its own account after an uninterrupted successful logout`, async () => {
+      api.mockResolvedValueOnce({ uid: A.id, ok: true, rev: 5 }).mockResolvedValueOnce({ ok: true })
+      expect(await useStore.getState()[method]()).toEqual({ owed: false })
+      expect(useStore.getState().user).toBeNull()
+      expect(ids()).toEqual([])
+      expect(localStorage.getItem('gym_owner')).toBeNull()
+      expect(localStorage.getItem('gym_user')).toBeNull()
+      expect(localStorage.getItem('gym_sync')).toBeNull()
+      expect(localStorage.getItem('gym_dirty')).toBeNull()
+      expect(JSON.parse(localStorage.getItem('gym_state_v1')).workouts).toEqual([])
+    })
+
+    it(`cancels ${method} before sending logout when another tab changes account during settlement`, async () => {
+      const request = deferred()
+      api.mockReturnValueOnce(request.promise)
+      const leaving = useStore.getState()[method]()
+      await vi.waitFor(() => expect(puts()).toHaveLength(1))
+      const shared = JSON.stringify(state('b-unsynced'))
+      const marker = JSON.stringify({ rev: 8, ts: 50 })
+      localStorage.setItem('gym_state_v1', shared)
+      localStorage.setItem('gym_sync', marker)
+      localStorage.setItem('gym_dirty', '1')
+      localStorage.setItem('gym_owner', B.id)
+      localStorage.setItem('gym_user', JSON.stringify(B))
+      window.dispatchEvent(new StorageEvent('storage', { key: 'gym_owner', newValue: B.id }))
+      request.resolve({ uid: A.id, ok: true, rev: 5 })
+
+      expect(await leaving).toBeNull()
+      expect(api.mock.calls.map(([path]) => path)).toEqual(['/api/data'])
+      expect(localStorage.getItem('gym_state_v1')).toBe(shared)
+      expect(localStorage.getItem('gym_sync')).toBe(marker)
+      expect(localStorage.getItem('gym_dirty')).toBe('1')
+      expect(localStorage.getItem('gym_owner')).toBe(B.id)
+      expect(localStorage.getItem('gym_user')).toBe(JSON.stringify(B))
+      expect(localStorage.getItem('gym_logout_owed')).toBeNull()
+    })
+
+    for (const outcome of ['success', 'failure']) {
+      it(`ignores ${method}'s late ${outcome} after a new account signs in`, async () => {
+        const request = deferred()
+        api.mockResolvedValueOnce({ uid: A.id, ok: true, rev: 5 })
+          .mockReturnValueOnce(request.promise)
+        const leaving = useStore.getState()[method]()
+        await vi.waitFor(() => expect(api).toHaveBeenCalledTimes(2))
+        useStore.getState().setUser(B)
+        useStore.getState().replaceState(state('b-unsynced'))
+        const shared = localStorage.getItem('gym_state_v1')
+        if (outcome === 'success') request.resolve({ ok: true })
+        else request.reject(new TypeError('Failed to fetch'))
+
+        expect(await leaving).toBeNull()
+        expect(useStore.getState().user).toEqual(B)
+        expect(ids()).toEqual(['b-unsynced'])
+        expect(localStorage.getItem('gym_state_v1')).toBe(shared)
+        expect(localStorage.getItem('gym_owner')).toBe(B.id)
+        expect(localStorage.getItem('gym_logout_owed')).toBeNull()
+      })
+    }
+  }
 })

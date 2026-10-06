@@ -62,3 +62,54 @@ under UTC. No Docker binary was available, so Docker image build/boot jobs were 
 Push is best effort with at-most-once provider attempts, not a guaranteed iOS alarm. The UI
 countdown is not restored after process kill. Private media uploads, AI, and unverified
 exercise media redistribution are deliberately excluded from this initial Free profile.
+
+## Re-review: 6 October 2026
+
+Reviewed the actual cloud checkout of `feat/cloudflare-free-pwa` at `f102d18` and
+re-ran the adapter, upstream API, MCP and frontend checks. The review found and fixed:
+
+- A stale tab joining the account already installed by another tab could erase that
+  account's unsynced saved copy. It now loads that copy with its own dirty/revision
+  markers, while keeping the previous account's owed changes separate.
+- A sign-out waiting for sync, a stash or a logout response could resume after an
+  account switch and wipe the next account's copy. Both sign-out variants now check
+  the initiating session across asynchronous boundaries.
+- A stale signed-in tab could save its previous account's state after another tab
+  removed the owner during logout. That ownerless copy could then be mistaken for
+  guest data at a new registration. Signed-in writes and sync now require an exact
+  match with the stored owner, including when the stored owner has been removed.
+- An unchanged upstream Coach demo test used a fixed microtask count to wait for a
+  lazy module import. The failure reproduced in a clean archive of upstream
+  `1350409`; the test now waits for that real module, without changing Coach behavior.
+
+Final checks after the fixes:
+
+| Check | Result |
+| --- | --- |
+| Cloudflare adapter | 47/47 passed |
+| Frontend | 3,196/3,196 passed across 258 files, including 13 new regression cases |
+| Upstream Node API | 473/473 passed |
+| MCP | 63/63 passed; Node-loadable check passed |
+| Coach generated assets / core loadability | Passed |
+| Locale / source-string consistency | Passed |
+| Fatigue / history-edit probes | 108,000 / 14,076 comparisons passed |
+| Frontend build + Wrangler dry-run | Passed, 75 static assets |
+| PWA manifest / service-worker stamp / static headers | Passed |
+| git diff --check | Passed |
+
+The client-side sign-out fence cannot undo a `Set-Cookie` deletion from a logout
+response already in flight when another tab signs in. In that ordering the new
+account may need to sign in again; its local copy must remain intact.
+
+Cloudflare's current official documentation still lists SQLite Durable Objects on
+Workers Free, with separate Durable Object CPU limits from the thin Worker. This
+confirms resource eligibility, not measured hosted quota or latency compliance:
+
+- <https://developers.cloudflare.com/durable-objects/platform/pricing/>
+- <https://developers.cloudflare.com/durable-objects/platform/limits/>
+- <https://developers.cloudflare.com/workers/platform/limits/>
+
+`check:config` intentionally fails against the committed hostname and D1 placeholders.
+No live deployment, GitHub CI, production credential provisioning, Docker boot, or
+real-iPhone acceptance test was performed during this re-review. This is a code review
+and local regression pass, not an independent security certification.

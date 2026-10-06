@@ -263,7 +263,7 @@ export const useStore = create((set, get) => {
 
   const session = () => ({ version: sessionVersion, uid: get().user?.id, owner: storedOwner(), server: serverBase() })
   const currentSession = who => !!who.uid && who.version === sessionVersion && who.uid === get().user?.id
-    && who.owner === storedOwner() && (!who.owner || who.owner === who.uid) && who.server === serverBase()
+    && who.owner === storedOwner() && who.owner === who.uid && who.server === serverBase()
   // Newer APIs identify their answer too: another tab can replace the cookie before its owner
   // storage event arrives. Older servers omit uid and still get the local session fence.
   const ownResponse = (who, data) => currentSession(who) && (data?.uid == null || data.uid === who.uid)
@@ -434,7 +434,7 @@ export const useStore = create((set, get) => {
     // storage event arrives, edits here remain this account's in memory and will be stashed by
     // that event; they must not overwrite the new account's shared copy or revision marker.
     const savedOwner = storedOwner()
-    if (get().user && savedOwner && owner !== savedOwner) {
+    if (get().user && owner !== savedOwner) {
       meta.set(S, { base, owed: owed || push })
       set({ S })
       return
@@ -657,11 +657,15 @@ export const useStore = create((set, get) => {
   // for — including one queued behind the push in flight — has run. Then the photos and videos
   // still waiting get one more try (lib/media-owed.js, at most a minute): they are owed exactly
   // like a change is.
-  const settle = async () => {
+  const settle = async who => {
     if (pulling) await pulling
+    if (!currentSession(who)) return
     await get().pushState()   // never throws — an owed copy stays owed when it does not land
-    while (pushing) await pushing
-    await settleMedia(get().S)
+    while (pushing) {
+      if (!currentSession(who)) return
+      await pushing
+    }
+    if (currentSession(who)) await settleMedia(get().S)
   }
 
   // Forget where this device stood with the server — a different account, a sign-out. The copy
@@ -771,10 +775,11 @@ export const useStore = create((set, get) => {
   // What a sign-out or disconnect answers when something is owed: how many changes, and how many
   // photos or videos, when there are any.
   const owedResult = (left, extra = {}) => ({ owed: true, count: left.count, ...(left.media ? { media: left.media } : {}), ...extra })
-  const stashOwed = async () => {
+  const stashOwed = async who => {
     const user = get().user
     if (!user) return true
     const all = await readStashes()
+    if (!currentSession(who)) return false
     const server = serverBase()
     const key = stashKey(server, user.id)
     const prev = all[key]?.state
@@ -1172,6 +1177,11 @@ export const useStore = create((set, get) => {
         const owner = ownerOf()
         rejoined = owner === u.id
         const other = !!owner && owner !== u.id
+        // Another tab may already have signed this account in while this tab still holds the
+        // previous account (or the empty sign-in screen). Its durable copy can include edits
+        // the server has not received: take that copy and its own markers, never wipe it or
+        // replace it with the server's older copy as part of this sign-in.
+        const savedHere = owner !== u.id && storedOwner() === u.id
         // The hold goes on before anything else can run: a poll, a resume, a debounced push.
         if (adopt) {
           adoptHold = true
@@ -1184,8 +1194,20 @@ export const useStore = create((set, get) => {
           if (m && m.uid !== u.id) writeAdopt(null)
           adoptHold = !!m && m.uid === u.id
         }
-        if (other) {
-          keepForPrevious(owner)
+        if (other) keepForPrevious(owner)
+        if (savedHere) {
+          const S = loadState()
+          const owed = storedOwed()
+          copyOwners.set(S, u.id)
+          meta.set(S, { base: readStoredSync(), owed })
+          registerCustom(S.customEx)
+          set({ S })
+          rejoined = true
+          offlineChanges = false
+          fpOf = null
+          setSync({ pending: owed, offline: false, auth: false, lastError: null,
+            lastSynced: +localStorage.getItem(SYNCED_AT_KEY) || 0 })
+        } else if (other) {
           forgetSync()
           localStorage.removeItem(KEY)
           persist(clone(DEF), false)
@@ -1380,15 +1402,27 @@ export const useStore = create((set, get) => {
        export, or going ahead anyway. `force` goes ahead: the owed copy is kept aside on this
        device (stashOwed) and comes back when it next reaches this server as this account. If
        even that cannot be written, nothing is wiped ({ owed, count, stashed: false }).
-       Otherwise { owed: false } or { owed: true, count, stashed: true }, signed out. */
+       Otherwise { owed: false } or { owed: true, count, stashed: true }, signed out. An account
+       change during the attempt cancels it and returns null, which the caller leaves alone. */
     async signOut({ force = false } = {}) {
-      await settle()
+      const who = session()
+      if (!currentSession(who)) return null
+      await settle(who)
+      if (!currentSession(who)) return null
       const left = get().unsyncedChanges()
       if (left.owed && !force) return owedResult(left)
-      if (left.owed && !(await stashOwed())) return owedResult(left, { stashed: false })
+      if (left.owed) {
+        const stashed = await stashOwed(who)
+        if (!currentSession(who)) return null
+        if (!stashed) return owedResult(left, { stashed: false })
+      }
       // The device is signed out either way. A request that did not get through leaves the cookie
       // behind, still valid, so the logout is owed until the server answers it (see boot).
-      try { await api('/api/logout', { method: 'POST', body: '{}' }) } catch (e) { if (!MOBILE) logoutOwed(true) }
+      try { await api('/api/logout', { method: 'POST', body: '{}' }) }
+      catch (e) { if (currentSession(who) && !MOBILE) logoutOwed(true) }
+      // An account change while settling or logging out cancels this attempt. In particular,
+      // never clear the new account's shared copy or leave a logout owed against its cookie.
+      if (!currentSession(who)) return null
       await clearLocalSession()
       return left.owed ? owedResult(left, { stashed: true }) : { owed: false }
     },
@@ -1421,7 +1455,7 @@ export const useStore = create((set, get) => {
     // the phone stays paired when that comes back owed and not stashed.
     async disconnectServer(opts) {
       const r = await get().signOut(opts)
-      if (r.owed && !r.stashed) return r
+      if (!r || (r.owed && !r.stashed)) return r
       await forgetRemote()
       pairedBase = null
       setSync({ server: null })
@@ -1437,11 +1471,20 @@ export const useStore = create((set, get) => {
     // valid, and wiping this device's copy of the data would sign the user out of the one place
     // the bump didn't reach. Caller reports the error.
     async signOutAll({ force = false } = {}) {
-      await settle()
+      const who = session()
+      if (!currentSession(who)) return null
+      await settle(who)
+      if (!currentSession(who)) return null
       const left = get().unsyncedChanges()
       if (left.owed && !force) return owedResult(left)
-      await api('/api/logout/all', { method: 'POST', body: '{}' })
-      if (left.owed && !(await stashOwed())) return owedResult(left, { stashed: false })
+      try { await api('/api/logout/all', { method: 'POST', body: '{}' }) }
+      catch (e) { if (!currentSession(who)) return null; throw e }
+      if (!currentSession(who)) return null
+      if (left.owed) {
+        const stashed = await stashOwed(who)
+        if (!currentSession(who)) return null
+        if (!stashed) return owedResult(left, { stashed: false })
+      }
       await clearLocalSession()
       return left.owed ? owedResult(left, { stashed: true }) : { owed: false }
     },

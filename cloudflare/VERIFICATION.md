@@ -113,3 +113,10 @@ confirms resource eligibility, not measured hosted quota or latency compliance:
 No live deployment, GitHub CI, production credential provisioning, Docker boot, or
 real-iPhone acceptance test was performed during this re-review. This is a code review
 and local regression pass, not an independent security certification.
+
+Before publication, the fork's `main` was verified at `31c6795b40fb54130192b5016d7dc29e9f457d30`.
+It differs from the original `1350409` base only by the upstream author's two-line README
+coffee-button addition. That addition is retained in the publication tree; application code,
+dependencies and test inputs are unchanged from the final passing checks above. The connector
+publication is based on that current fork-main commit, and may have a different commit SHA
+from the local review commits; the complete Git tree must match.

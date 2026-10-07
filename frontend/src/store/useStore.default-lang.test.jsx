@@ -77,6 +77,7 @@ describe('instance default language', () => {
     // Device B's browser is English; the server copy was last written from device A (German).
     nav(['en-US'])
     const server = { ...clone(DEF), _ts: 100, lang: 'de', langAuto: true, workouts: [{ id: 'w1', d: '2026-09-01', start: 1, entries: [] }] }
+    localStorage.setItem('gym_owner', 'u1')
     useStore.setState({ S: clone(server), user: { id: 'u1' }, ready: true, config: { invite_only: false } })
     localStorage.setItem('gym_sync', JSON.stringify({ rev: 5, ts: 100 }))
     expect(shown()).toBe('en')

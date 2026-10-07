@@ -96,6 +96,9 @@ describe('the demo Coach failing inside its timer', () => {
     mocks.S = state()
     installDom()
     await act(async () => { root.render(React.createElement(CoachChat)) })
+    // Vite's lazy import can outlast any fixed number of microtasks. Wait for the
+    // real demo module already requested by the status hook before clicking.
+    await act(async () => { await import('../lib/coach-demo.js'); await flush() })
     await settle()
 
     await click(chip(/Last workout/))

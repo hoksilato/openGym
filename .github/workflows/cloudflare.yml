@@ -1,0 +1,35 @@
+name: Cloudflare Free adapter
+on:
+  pull_request:
+    paths: ['cloudflare/**', 'frontend/**', 'api/password.js', 'api/passkeys-store.js', 'api/push-messages.js', '.github/workflows/cloudflare.yml']
+  push:
+    branches: [main, feat/cloudflare-free-pwa]
+    paths: ['cloudflare/**', 'frontend/**', 'api/password.js', 'api/passkeys-store.js', 'api/push-messages.js', '.github/workflows/cloudflare.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cloudflare-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            cloudflare/package-lock.json
+      - run: npm ci --prefix frontend
+      - run: npm ci --prefix cloudflare
+      - run: npm test --prefix cloudflare
+      - run: npm run build --prefix cloudflare
+      - name: Ensure no unresolved SW stamp or API caching
+        run: |
+          ! grep -q '__BUILD__' frontend/dist/sw.js
+          test -f frontend/dist/_headers

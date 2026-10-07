@@ -266,3 +266,48 @@ describe('rest readiness and optional timed-set overtime', () => {
     expect(replacement).not.toHaveBeenCalled()
   })
 })
+
+// Account changes are different from switching screens: a callback captured by the old
+// workout must never write into the new profile, and sheets may show that person's data.
+describe('account-scoped timers and sheets', () => {
+  let original, fetch
+  beforeEach(() => {
+    vi.useFakeTimers()
+    original = useStore.getState()
+    fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { headers: { 'Content-Type': 'application/json' } }))
+    useStore.setState({ user: { id: 'timer-owner-a' }, S: { ...original.S, sound: false } })
+  })
+  afterEach(() => {
+    useUI.getState().stopRest()
+    useUI.getState().stopWork()
+    useStore.setState({ user: original.user, S: original.S })
+    fetch.mockRestore()
+    vi.useRealTimers()
+  })
+
+  it('clears an old timed-set callback and open sheets on account switch', () => {
+    const done = vi.fn()
+    useUI.getState().openSheet(() => null)
+    useUI.getState().startWork(10, 'Old workout', done)
+    useStore.setState({ user: { id: 'timer-owner-b' } })
+    vi.advanceTimersByTime(20_000)
+    expect(done).not.toHaveBeenCalled()
+    expect(useUI.getState().work).toBeNull()
+    expect(useUI.getState().sheets).toEqual([])
+  })
+
+  it('clears the local rest without cancelling the next account’s server timer', () => {
+    useUI.getState().startRest(90)
+    const sent = fetch.mock.calls.length
+    useStore.setState({ user: { id: 'timer-owner-b' } })
+    expect(useUI.getState().timer).toBeNull()
+    expect(fetch.mock.calls.length).toBe(sent)
+  })
+
+  it('keeps a rest through an ordinary refresh of the same signed-in identity', () => {
+    useUI.getState().startRest(90)
+    const endsAt = useUI.getState().timer.endsAt
+    useStore.setState({ user: { id: 'timer-owner-a', name: 'Updated name' } })
+    expect(useUI.getState().timer.endsAt).toBe(endsAt)
+  })
+})

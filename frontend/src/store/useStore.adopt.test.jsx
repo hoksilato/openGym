@@ -20,7 +20,10 @@ const workout = (id, d = '2026-09-01') => ({ id, d, start: 1, entries: [] })
 const sync = () => JSON.parse(localStorage.getItem('gym_sync'))
 const puts = () => api.mock.calls.filter(([, o]) => o?.method === 'PUT').map(([, o]) => JSON.parse(o.body))
 const paths = () => api.mock.calls.map(([p]) => p)
-const signedIn = (S, extra = {}) => useStore.setState({ S, user: { id: 'user-1' }, ready: true, sync: { offline: false, pending: false, lastSynced: 0 }, ...extra })
+const signedIn = (S, extra = {}) => {
+  if (extra.user !== null) localStorage.setItem('gym_owner', 'user-1')
+  useStore.setState({ S, user: { id: 'user-1' }, ready: true, sync: { offline: false, pending: false, lastSynced: 0 }, ...extra })
+}
 const netErr = () => new TypeError('Failed to fetch')
 
 const server = { ...clone(DEF), _ts: 100, unit: 'lb', restSec: 60, workouts: [workout('w1')], routines: [routine('r1')], week: { 1: ['r1'] }, _rev: 4 }

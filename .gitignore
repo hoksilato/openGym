@@ -21,3 +21,12 @@ node_modules
 junit.xml
 coverage/
 frontend/bundle-size.json
+
+# Cloudflare local/generated state and secrets
+cloudflare/.dev.vars
+cloudflare/.dev.vars.*
+!cloudflare/.dev.vars.example
+cloudflare/.wrangler/
+cloudflare/dist/
+cloudflare/.test-bundle/
+cloudflare/*.sql.local

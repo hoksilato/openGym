@@ -1,0 +1,7 @@
+# Local HTTPS development only. Copy to .dev.vars and set YOUR OWN random secret;
+# never commit it. Production: set Worker secret SESSION_SECRET with Wrangler.
+SESSION_SECRET=
+# Push is disabled until all three values are explicitly provisioned.
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=

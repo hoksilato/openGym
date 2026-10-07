@@ -25,6 +25,7 @@ const signedIn = (S, extra = {}) => useStore.setState({ S, user: { id: 'user-1' 
 
 beforeEach(() => {
   localStorage.clear()
+  localStorage.setItem('gym_owner', 'user-1')
   api.mockReset()
   useStore.setState({ S: clone(DEF), user: null, ready: false })
 })

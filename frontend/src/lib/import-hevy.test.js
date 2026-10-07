@@ -143,11 +143,18 @@ describe('parseHevyWorkouts', () => {
   })
 
   it('merges two Hevy sessions on the same local day', () => {
-    const a = { ...WORKOUT, id: 'a', title: 'AM', exercises: [WORKOUT.exercises[0]] }
+    // Hevy sends absolute timestamps, but the importer groups the user's local calendar day.
+    // Fixed UTC morning/evening timestamps straddle midnight on machines east of UTC.
+    const localISO = hour => new Date(2026, 7, 25, hour).toISOString()
+    const a = {
+      ...WORKOUT, id: 'a', title: 'AM',
+      start_time: localISO(10), end_time: localISO(11),
+      exercises: [WORKOUT.exercises[0]],
+    }
     const b = {
       ...WORKOUT, id: 'b', title: 'PM',
-      start_time: '2026-08-25T18:00:00+00:00',
-      end_time: '2026-08-25T19:00:00+00:00',
+      start_time: localISO(18),
+      end_time: localISO(19),
       exercises: [WORKOUT.exercises[1]],
     }
     const parsed = parseHevyWorkouts([a, b], TEMPLATES, { unit: 'kg' })

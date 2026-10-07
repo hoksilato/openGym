@@ -1,0 +1,26 @@
+{
+  "name": "opengym-cloudflare",
+  "version": "1.3.9-cf.1",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build:frontend": "node scripts/build-frontend.mjs",
+    "build": "npm run build:frontend && wrangler deploy --dry-run --outdir dist",
+    "build:test": "wrangler deploy --dry-run --config wrangler.test.jsonc --outdir .test-bundle",
+    "test": "npm run build:test && node --test --test-concurrency=1 test/*.test.js",
+    "dev": "wrangler dev --local --local-protocol https --var ORIGIN:https://localhost:8787 --var RP_ID:localhost",
+    "check:config": "node scripts/check-config.mjs"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "13.3.2",
+    "web-push": "3.6.7"
+  },
+  "devDependencies": {
+    "wrangler": "4.147.0",
+    "miniflare": "5.20261001.0-alpha"
+  }
+}

@@ -18,6 +18,7 @@ const httpError = status => Object.assign(new Error('HTTP ' + status), { status 
 
 beforeEach(() => {
   localStorage.clear()
+  localStorage.setItem('gym_owner', 'user-1')
   api.mockReset()
   useStore.setState({ S: clone(DEF), user: null, ready: false })
 })
@@ -111,7 +112,8 @@ describe('saved workout state sync and restore', () => {
     expect(useStore.getState().S.routines.map(r => r.id)).toEqual(['local'])
   })
 
-  it('restores a remote state over defaults when the local profile is empty', async () => {
+  it('restores a remote state over defaults when the signed-in local profile is empty', async () => {
+    useStore.setState({ user: { id: 'user-1' }, ready: true })
     const remote = { _ts: 30, routines: [routine('remote')], workouts: [] }
     api.mockResolvedValue({ state: remote })
 
